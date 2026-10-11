@@ -1,5 +1,27 @@
 package com.example.mediasearch.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.text.format.Formatter
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.core.content.ContextCompat
+import com.example.mediasearch.data.Show
+import com.example.mediasearch.download.DownloadStore
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -92,8 +114,17 @@ fun LibraryScreen(onOpenSettings: () -> Unit, vm: LibraryViewModel = viewModel()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
+
+    val download by vm.download.collectAsStateWithLifecycle()
+    val uriHandler = LocalUriHandler.current
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        // Download runs either way; without permission the progress notification just isn't shown.
+        vm.startDownload()
+    }
 
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
+    LaunchedEffect(Unit) { vm.urls.collect { runCatching { uriHandler.openUri(it) } } }
 
     Scaffold(
         topBar = {
@@ -163,10 +194,28 @@ fun LibraryScreen(onOpenSettings: () -> Unit, vm: LibraryViewModel = viewModel()
             when {
                 movieCount == 0 && showCount == 0 ->
                     EmptyLibrary(refreshing, onRefresh = vm::refresh, onOpenSettings = onOpenSettings)
-                tab == 0 -> MovieList(movies, query)
-                else -> ShowList(shows, query)
+                tab == 0 -> MovieList(movies, query, onOpen = vm::openImdb, onDownload = vm::showDownload)
+                else -> ShowList(shows, query, onOpenImdb = vm::openImdb)
             }
         }
+    }
+
+    download?.let { d ->
+        DownloadDialogView(
+            d,
+            onToggle = vm::toggleFile,
+            onDismiss = vm::dismissDownload,
+            onConfirm = {
+                val ctx = context
+                if (Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    vm.startDownload()
+                }
+            },
+        )
     }
 }
 
@@ -236,8 +285,15 @@ private fun SyncStatus(settings: AppSettings) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MovieList(movies: List<Movie>, query: String) {
+private fun MovieList(
+    movies: List<Movie>,
+    query: String,
+    onOpen: (Movie) -> Unit,
+    onDownload: (Movie) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
     if (movies.isEmpty()) {
         NoMatches("No movies match \"$query\"")
         return
@@ -245,6 +301,16 @@ private fun MovieList(movies: List<Movie>, query: String) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(movies, key = { it.id }) { movie ->
             ListItem(
+                // Tap: IMDb page. Long press: download to the phone.
+                modifier = Modifier.combinedClickable(
+                    onClick = { onOpen(movie) },
+                    onClickLabel = "Open on IMDb",
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onDownload(movie)
+                    },
+                    onLongClickLabel = "Download to phone",
+                ),
                 headlineContent = { Text(movie.title, fontWeight = FontWeight.Medium) },
                 trailingContent = if (movie.year != null) {
                     {
@@ -265,19 +331,19 @@ private fun MovieList(movies: List<Movie>, query: String) {
 }
 
 @Composable
-private fun ShowList(shows: List<ShowWithSeasons>, query: String) {
+private fun ShowList(shows: List<ShowWithSeasons>, query: String, onOpenImdb: (Show) -> Unit) {
     if (shows.isEmpty()) {
         NoMatches("No shows match \"$query\"")
         return
     }
     LazyColumn(Modifier.fillMaxSize()) {
-        items(shows, key = { it.show.id }) { ShowRow(it) }
+        items(shows, key = { it.show.id }) { ShowRow(it, onOpenImdb) }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ShowRow(item: ShowWithSeasons) {
+private fun ShowRow(item: ShowWithSeasons, onOpenImdb: (Show) -> Unit) {
     var expanded by rememberSaveable(item.show.id) { mutableStateOf(false) }
     val seasons = remember(item.seasons) {
         item.seasons.sortedWith(
@@ -297,7 +363,7 @@ private fun ShowRow(item: ShowWithSeasons) {
         ),
     ) {
         ListItem(
-            modifier = Modifier.clickable(enabled = seasons.isNotEmpty()) { expanded = !expanded },
+            modifier = Modifier.clickable { expanded = !expanded },
             headlineContent = { Text(item.show.title, fontWeight = FontWeight.Medium) },
             supportingContent = {
                 Text(
@@ -305,27 +371,27 @@ private fun ShowRow(item: ShowWithSeasons) {
                     color = MaterialTheme.colorScheme.tertiary,
                 )
             },
-            trailingContent = if (seasons.isNotEmpty()) {
-                {
-                    Icon(
-                        if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (expanded) "Hide seasons" else "Show seasons",
-                        tint = MaterialTheme.colorScheme.tertiary,
-                    )
-                }
-            } else {
-                null
+            trailingContent = {
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Hide details" else "Show details",
+                    tint = MaterialTheme.colorScheme.tertiary,
+                )
             },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         )
         AnimatedVisibility(visible = expanded) {
-            FlowRow(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                seasons.forEach {
-                    Pill(it.name, MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+            Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    seasons.forEach {
+                        Pill(it.name, MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+                    }
+                }
+                TextButton(onClick = { onOpenImdb(item.show) }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                    Text("Open on IMDb ›", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -369,4 +435,83 @@ private fun EmptyLibrary(refreshing: Boolean, onRefresh: () -> Unit, onOpenSetti
         ) { Text(if (refreshing) "Syncing…" else "Sync now") }
         OutlinedButton(onClick = onOpenSettings) { Text("Open Settings") }
     }
+}
+
+@Composable
+private fun DownloadDialogView(
+    d: LibraryViewModel.DownloadDialog,
+    onToggle: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    fun size(bytes: Long) = Formatter.formatShortFileSize(ctx, bytes)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Download ${d.movie.title}") },
+        text = {
+            when {
+                d.loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Looking in the folder on your Pi…")
+                }
+                d.error != null -> Text(d.error, color = MaterialTheme.colorScheme.error)
+                else -> Column {
+                    Column(
+                        Modifier
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        d.files.forEach { f ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onToggle(f.name) }
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = f.name in d.selected, onCheckedChange = { onToggle(f.name) })
+                                Column(Modifier.weight(1f)) {
+                                    Text(f.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        size(f.size),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        "Selected: ${size(d.selectedBytes)} · Free on phone: ${size(d.freeBytes)}",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Text(
+                        "Saves to Download/${DownloadStore.LOCATION_NAME}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (!d.fitsOnPhone) {
+                        Text("Not enough free space on your phone.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
+                    } else if (d.onMobileData) {
+                        Text(
+                            "You're on mobile data. Large files can use a lot of your data plan.",
+                            color = MaterialTheme.colorScheme.secondary,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = !d.loading && d.error == null && d.selected.isNotEmpty() && d.fitsOnPhone,
+            ) { Text("Download") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

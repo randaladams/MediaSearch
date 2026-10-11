@@ -11,9 +11,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.OutputStream
 
 /** Thrown when the server presents a different host key from the one saved earlier. */
 class HostKeyChangedException(message: String) : IOException(message)
+
+/** Thrown when a download is cancelled from the notification. */
+class DownloadCancelledException : IOException("Cancelled")
 
 /**
  * Talks to the Pi over SSH, using the Home address, the Away address, or both (Auto).
@@ -39,43 +43,108 @@ class SshClient(private val settingsRepository: SettingsRepository) {
         ConnectionMode.AUTO -> listOfNotNull(home(s), away(s))
     }
 
-    suspend fun fetchListing(s: AppSettings): Listing = withContext(Dispatchers.IO) {
-        val targets = endpointsFor(s)
-        if (targets.isEmpty()) {
-            throw IllegalStateException(
-                when (s.connectionMode) {
-                    ConnectionMode.HOME -> "The Home address isn't set. Check Settings."
-                    ConnectionMode.AWAY -> "The Away address isn't set. Check Settings."
-                    ConnectionMode.AUTO -> "No server address is set. Check Settings."
-                },
-            )
+    suspend fun fetchListing(s: AppSettings): Listing = withAnySession(s) { session, ep ->
+        Listing(
+            movieFolders = listDirs(session, s.moviesPath, depth = 1),
+            tvEntries = listDirs(session, s.tvPath, depth = 2),
+            via = ep,
+        )
+    }
+
+    data class RemoteFile(val name: String, val size: Long)
+
+    /** Files directly inside one movie's folder, with sizes. */
+    suspend fun listMovieFiles(s: AppSettings, folder: String): List<RemoteFile> = withAnySession(s) { session, _ ->
+        val dir = joinPath(s.moviesPath, folder)
+        val r = exec(session, "find -H ${quote(dir)} -mindepth 1 -maxdepth 1 -type f -printf '%s\\t%f\\n'")
+        if (r.exitCode != 0 && r.output.isBlank()) {
+            throw IOException("Couldn't open the folder: ${r.error.trim().ifBlank { "exit code ${r.exitCode}" }}")
+        }
+        r.output.lineSequence()
+            .map { it.trimEnd('\r') }
+            .mapNotNull { line ->
+                val tab = line.indexOf('\t')
+                if (tab <= 0) null else RemoteFile(line.substring(tab + 1), line.substring(0, tab).toLongOrNull() ?: 0L)
+            }
+            .filterNot { it.name.startsWith(".") }
+            .toList()
+    }
+
+    /**
+     * Streams one file from a movie folder into [out]. [onProgress] gets the bytes copied so far
+     * and returns false to cancel. Uses `cat` over SSH so odd characters in names are handled by
+     * normal shell quoting.
+     */
+    suspend fun downloadMovieFile(
+        s: AppSettings,
+        folder: String,
+        name: String,
+        out: OutputStream,
+        onProgress: (Long) -> Boolean,
+    ): Long = withAnySession(s) { session, _ ->
+        val channel = session.openChannel("exec") as ChannelExec
+        channel.setCommand("cat -- ${quote(joinPath(joinPath(s.moviesPath, folder), name))}")
+        val err = ByteArrayOutputStream()
+        channel.setErrStream(err)
+        val input = channel.inputStream
+        channel.connect(15_000)
+        try {
+            val buf = ByteArray(256 * 1024)
+            var total = 0L
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+                total += n
+                if (!onProgress(total)) throw DownloadCancelledException()
+            }
+            while (!channel.isClosed) Thread.sleep(20)
+            if (channel.exitStatus != 0) {
+                throw IOException("Couldn't read $name: ${err.toString(Charsets.UTF_8.name()).trim().ifBlank { "exit code ${channel.exitStatus}" }}")
+            }
+            total
+        } finally {
+            channel.disconnect()
+        }
+    }
+
+    /** Connects using the address(es) the mode allows (Auto: Home, then Away) and runs [block]. */
+    private suspend fun <T> withAnySession(s: AppSettings, block: (Session, Endpoint) -> T): T =
+        withContext(Dispatchers.IO) {
+            val targets = endpointsFor(s)
+            if (targets.isEmpty()) {
+                throw IllegalStateException(
+                    when (s.connectionMode) {
+                        ConnectionMode.HOME -> "The Home address isn't set. Check Settings."
+                        ConnectionMode.AWAY -> "The Away address isn't set. Check Settings."
+                        ConnectionMode.AUTO -> "No server address is set. Check Settings."
+                    },
+                )
+            }
+
+            val failures = mutableListOf<String>()
+            for ((i, ep) in targets.withIndex()) {
+                // In Auto mode, give the Home address only a few seconds before falling back to Away.
+                val quick = s.connectionMode == ConnectionMode.AUTO && i < targets.lastIndex
+                val session = try {
+                    connect(s, ep, timeoutMs = if (quick) 4_000 else 15_000)
+                } catch (e: JSchException) {
+                    if (isAuthFailure(e)) throw IOException(friendly(e), e) // same Pi either way; no point retrying
+                    failures += "$ep: ${friendly(e)}"
+                    continue
+                }
+                try {
+                    return@withContext block(session, ep)
+                } catch (e: JSchException) {
+                    throw IOException(friendly(e), e)
+                } finally {
+                    session.disconnect()
+                }
+            }
+            throw IOException("Couldn't reach the server.\n" + failures.joinToString("\n"))
         }
 
-        val failures = mutableListOf<String>()
-        for ((i, ep) in targets.withIndex()) {
-            // In Auto mode, give the Home address only a few seconds before falling back to Away.
-            val quick = s.connectionMode == ConnectionMode.AUTO && i < targets.lastIndex
-            val session = try {
-                connect(s, ep, timeoutMs = if (quick) 4_000 else 15_000)
-            } catch (e: JSchException) {
-                if (isAuthFailure(e)) throw IOException(friendly(e), e) // same Pi either way; no point retrying
-                failures += "$ep: ${friendly(e)}"
-                continue
-            }
-            try {
-                return@withContext Listing(
-                    movieFolders = listDirs(session, s.moviesPath, depth = 1),
-                    tvEntries = listDirs(session, s.tvPath, depth = 2),
-                    via = ep,
-                )
-            } catch (e: JSchException) {
-                throw IOException(friendly(e), e)
-            } finally {
-                session.disconnect()
-            }
-        }
-        throw IOException("Couldn't reach the server.\n" + failures.joinToString("\n"))
-    }
+    private fun joinPath(base: String, child: String) = base.trim().trimEnd('/') + "/" + child
 
     /** Tries both addresses (whatever the mode) and checks the folders once. */
     suspend fun testConnection(s: AppSettings): String = withContext(Dispatchers.IO) {

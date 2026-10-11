@@ -14,8 +14,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Bump both for each release; versionName is shown at the bottom of Settings.
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
     }
 
     buildTypes {
@@ -67,6 +67,9 @@ dependencies {
     implementation("androidx.room:room-runtime:$room")
     implementation("androidx.room:room-ktx:$room")
     ksp("androidx.room:room-compiler:$room")
+
+    // Background downloads
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     // Locally saved settings
     implementation("androidx.datastore:datastore-preferences:1.1.1")
