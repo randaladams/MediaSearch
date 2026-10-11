@@ -38,6 +38,8 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // JSch and Bouncy Castle both ship these OSGi manifests; Android doesn't use them.
+            excludes += "META-INF/versions/*/OSGI-INF/MANIFEST.MF"
             excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
         }
     }
