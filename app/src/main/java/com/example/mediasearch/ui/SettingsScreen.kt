@@ -60,6 +60,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.text.style.TextAlign
+import com.example.mediasearch.BuildConfig
 import com.example.mediasearch.data.ConnectionMode
 import com.example.mediasearch.ui.theme.Brand
 
@@ -243,7 +245,14 @@ fun SettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
                     ),
                 ) { Text("Save", fontWeight = FontWeight.Bold) }
             }
-            Spacer(Modifier.size(24.dp))
+            Text(
+                "Media Search v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
+            Spacer(Modifier.size(16.dp))
         }
     }
 

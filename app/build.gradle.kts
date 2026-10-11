@@ -13,8 +13,9 @@ android {
         applicationId = "com.example.mediasearch"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // Bump both for each release; versionName is shown at the bottom of Settings.
+        versionCode = 2
+        versionName = "1.1"
     }
 
     buildTypes {
@@ -33,6 +34,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true // exposes BuildConfig.VERSION_NAME for the Settings footer
     }
 
     packaging {
