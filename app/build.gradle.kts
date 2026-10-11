@@ -18,9 +18,28 @@ android {
         versionName = "1.3"
     }
 
+    // Permanent signing key, supplied by GitHub Actions secrets (see .github/workflows/build.yml).
+    // Every build signed with the same key installs over the previous one and keeps your settings.
+    // Without the secrets (e.g. a local build), Android Studio's temporary debug key is used instead.
+    val keystorePath: String? = System.getenv("SIGNING_KEYSTORE_PATH")
+    signingConfigs {
+        if (keystorePath != null) {
+            create("permanent") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_STORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (keystorePath != null) signingConfig = signingConfigs.getByName("permanent")
+        }
         release {
             isMinifyEnabled = false
+            if (keystorePath != null) signingConfig = signingConfigs.getByName("permanent")
         }
     }
 
