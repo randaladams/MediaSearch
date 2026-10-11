@@ -16,6 +16,10 @@ An Android app that keeps an offline, searchable list of the movie and TV folder
 1. Open the `MediaSearch` folder in Android Studio (Ladybug or newer). It will download Gradle and generate the wrapper jar on first sync.
 2. Plug in your phone (USB debugging on) and press Run.
 
+### Or build on GitHub
+
+Push this folder to a GitHub repository (with `.github/` and `gradlew` at the repo root). The **Build APK** workflow runs on every push. When it finishes, open the run under the **Actions** tab and download **MediaSearch-debug-apk** from the Artifacts section. Unzip it and install `app-debug.apk` on your phone (allow "Install unknown apps" for your browser or file manager). You can also start a build by hand from the Actions tab with **Run workflow**.
+
 minSdk 26 (Android 8.0), targetSdk 35. Libraries: Jetpack Compose + Material 3, Room, DataStore, JSch (mwiede fork) + Bouncy Castle.
 
 ## Set up a key for the phone
