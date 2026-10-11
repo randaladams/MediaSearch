@@ -50,9 +50,40 @@ RSA, ECDSA and Ed25519 keys work, in OpenSSH or PEM format. If you set a passphr
 
 If your home internet doesn't have a fixed public IP, use a free dynamic-DNS name (DuckDNS, No-IP, or your router's built-in one) for the Away address.
 
+## Movie actions
+
+- **Tap a movie** to open its IMDb page (the IMDb app if installed, otherwise the browser). The app finds the exact title using the name and year. If there's no confident match, it opens IMDb's search results instead. For TV shows, expand a show and tap **Open on IMDb**.
+- **Long-press a movie** to download it. The app lists the files in that folder on the Pi, with videos and subtitles pre-selected, shows sizes and your free space, and warns if you're on mobile data. Downloads run in the background with a progress notification and a Cancel button, and are saved to **Download/Media Search/<movie folder>/**, where any video player or file manager can find them. On Android 8–9 they go to the app's own Downloads folder instead.
+
 ## Server key pinning
 
 The first successful connection saves the Pi's SSH host key (shown in Settings → Login). Every later connection, on either address, must present the same key or the app refuses to sync. This protects the Away connection from being redirected to another machine. If you rebuild the Pi or regenerate its SSH keys, tap **Forget saved server key** and connect again.
+
+## Signing and upgrading
+
+Builds are signed with a permanent key stored as three GitHub Actions secrets (**Settings → Secrets and variables → Actions**):
+
+| Secret | Value |
+|---|---|
+| `KEY_ALIAS` | `mediasearch` |
+| `KEYSTORE_PASSWORD` | the keystore password |
+| `KEYSTORE_BASE64` | the keystore file, base64-encoded on one line |
+
+Because every build carries the same signature, a new APK installs over the old one and keeps settings, the library and the SSH key. Keep `mediasearch-release.jks` and its password somewhere safe. If they're lost, the next build will need a one-time uninstall.
+
+To upgrade from a PC with the phone connected over USB (USB debugging on):
+
+```
+adb install -r app-debug.apk
+```
+
+`-r` replaces the installed app and keeps its data. On Windows, run it from the folder containing `adb.exe`, or give the full paths:
+
+```
+"C:\platform-tools\adb.exe" install -r "C:\Users\you\Downloads\app-debug.apk"
+```
+
+You can also open the APK on the phone itself; Android will offer **Update**.
 
 ## Notes
 
