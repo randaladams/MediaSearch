@@ -17,13 +17,36 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # GitHub's Ubuntu runners already include the Android SDK (ANDROID_HOME is set).
+      # v5 runs on Node 24 and is fully MIT-licensed (v6 moved caching to a separately licensed component).
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      # Restores the permanent signing key from repository secrets, so every build can
+      # install over the previous one without uninstalling (and losing settings).
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/mediasearch-release.jks"
+            echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/mediasearch-release.jks" >> "$GITHUB_ENV"
+            echo "Signing with the permanent key."
+          else
+            echo "::warning::KEYSTORE_BASE64 secret not set. This build uses a temporary key and can't update an installed copy."
+          fi
+
       - name: Build debug APK
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
+
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/mediasearch-release.jks"
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
