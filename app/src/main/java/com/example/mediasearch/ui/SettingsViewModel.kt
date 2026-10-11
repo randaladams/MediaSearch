@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -29,6 +28,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var portText by mutableStateOf("22")
         private set
+    var extPortText by mutableStateOf("6425")
+        private set
     var loaded by mutableStateOf(false)
         private set
     var busy by mutableStateOf(false)
@@ -36,8 +37,9 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     var testResult by mutableStateOf<String?>(null)
         private set
 
-    val keyName: StateFlow<String?> =
-        settingsRepo.settings.map { it.keyFileName }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    /** Live values for things changed outside the form (imported key, pinned server key). */
+    val saved: StateFlow<AppSettings> =
+        settingsRepo.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
     private val _messages = Channel<String>(Channel.BUFFERED)
     val messages: Flow<String> = _messages.receiveAsFlow()
@@ -48,6 +50,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             val s = settingsRepo.settings.first()
             form = s
             portText = s.port.toString()
+            extPortText = s.extPort.toString()
             loaded = true
         }
     }
@@ -60,8 +63,14 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         portText = text.filter(Char::isDigit).take(5)
     }
 
-    private fun current(): AppSettings =
-        form.copy(port = portText.toIntOrNull()?.takeIf { it in 1..65535 } ?: 22)
+    fun onExtPortChange(text: String) {
+        extPortText = text.filter(Char::isDigit).take(5)
+    }
+
+    private fun current(): AppSettings = form.copy(
+        port = portText.toIntOrNull()?.takeIf { it in 1..65535 } ?: 22,
+        extPort = extPortText.toIntOrNull()?.takeIf { it in 1..65535 } ?: 6425,
+    )
 
     fun save() {
         viewModelScope.launch {
@@ -83,7 +92,14 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Tests the values currently on screen (saved or not). */
+    fun forgetHostKey() {
+        viewModelScope.launch {
+            settingsRepo.forgetHostKey()
+            _messages.send("Server key forgotten. It will be saved again on the next connection.")
+        }
+    }
+
+    /** Tests the values currently on screen (saved or not), on both addresses. */
     fun testConnection() {
         if (busy) return
         viewModelScope.launch {

@@ -62,7 +62,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             _refreshing.value = true
             try {
                 val r = repo.refresh()
-                _messages.send("Updated: ${r.movies} movies, ${r.shows} shows (${r.seasons} seasons)")
+                _messages.send("Synced via ${r.via}: ${r.movies} movies, ${r.shows} shows (${r.seasons} seasons)")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

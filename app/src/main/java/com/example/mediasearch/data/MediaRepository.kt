@@ -4,7 +4,7 @@ import com.example.mediasearch.ssh.SshClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 
-data class RefreshResult(val movies: Int, val shows: Int, val seasons: Int)
+data class RefreshResult(val movies: Int, val shows: Int, val seasons: Int, val via: String)
 
 class MediaRepository(
     private val dao: MediaDao,
@@ -53,7 +53,7 @@ class MediaRepository(
         }
 
         dao.replaceAll(movies, shows)
-        settings.setLastRefresh(System.currentTimeMillis())
-        return RefreshResult(movies.size, shows.size, shows.sumOf { it.seasons.size })
+        settings.setLastRefresh(System.currentTimeMillis(), listing.via.label)
+        return RefreshResult(movies.size, shows.size, shows.sumOf { it.seasons.size }, listing.via.label)
     }
 }

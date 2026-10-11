@@ -39,17 +39,23 @@ RSA, ECDSA and Ed25519 keys work, in OpenSSH or PEM format. If you set a passphr
 
 | Field | Example |
 |---|---|
-| IP address | `192.168.1.50` |
-| Port | `22` |
+| Home: local IP / port | `192.168.1.50` / `22` |
+| Away: public IP or hostname / port | `myhouse.duckdns.org` / `6425` (router forwards 6425 → Pi:22) |
+| Which address to use | **Auto** (Home first, Away after ~4 s), **Home** only, or **Away** only |
 | Username | `pi` |
 | Movies folder | `/mnt/media/Movies` (or `~/Movies`) |
 | TV folder | `/mnt/media/TV` |
 
-**Test connection** checks the values on screen (saved or not) and reports whether both folders exist. **Save** stores them on the phone with DataStore.
+**Test connection** tries both addresses with the values on screen (saved or not) and reports whether both folders exist. **Save** stores them on the phone with DataStore. The library screen shows whether the last sync came from home or away.
+
+If your home internet doesn't have a fixed public IP, use a free dynamic-DNS name (DuckDNS, No-IP, or your router's built-in one) for the Away address.
+
+## Server key pinning
+
+The first successful connection saves the Pi's SSH host key (shown in Settings → Login). Every later connection, on either address, must present the same key or the app refuses to sync. This protects the Away connection from being redirected to another machine. If you rebuild the Pi or regenerate its SSH keys, tap **Forget saved server key** and connect again.
 
 ## Notes
 
-- Host key checking is off (`StrictHostKeyChecking=no`), which is reasonable on a home LAN. For use over the internet, add a known-hosts check in `ssh/SshClient.kt`.
 - The key passphrase is stored in app-private storage in plain text. Leave it blank (unencrypted key) or move it to Android Keystore if that matters to you.
 - Hidden folders (`.Trash`, `@eaDir`, …) are skipped.
 - Listing uses GNU `find -printf`, which Raspberry Pi OS has by default.
