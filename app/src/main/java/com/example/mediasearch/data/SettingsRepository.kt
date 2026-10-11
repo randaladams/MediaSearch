@@ -3,6 +3,7 @@ package com.example.mediasearch.data
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Base64
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -13,8 +14,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import org.json.JSONException
+import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+
+private const val BACKUP_FORMAT = "mediasearch-backup"
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
@@ -138,6 +143,80 @@ class SettingsRepository(private val context: Context) {
     }
 
     fun readKey(): ByteArray? = keyFile.takeIf { it.exists() }?.readBytes()
+
+    // ---- Backup / restore ----
+    // A small JSON file the user saves wherever they like (e.g. Downloads) and restores after a reinstall.
+    // The library itself isn't included: one sync rebuilds it.
+
+    /** Writes the saved settings to [uri]. The SSH key and passphrase are included only if asked. */
+    suspend fun exportBackup(uri: Uri, includeKey: Boolean) = withContext(Dispatchers.IO) {
+        val s = settings.first()
+        val json = JSONObject().apply {
+            put("format", BACKUP_FORMAT)
+            put("formatVersion", 1)
+            put("host", s.host)
+            put("port", s.port)
+            put("extHost", s.extHost)
+            put("extPort", s.extPort)
+            put("connectionMode", s.connectionMode.name)
+            put("username", s.username)
+            put("moviesPath", s.moviesPath)
+            put("tvPath", s.tvPath)
+            pinnedHostKey()?.let {
+                put("hostKey", it)
+                put("hostKeyFingerprint", s.hostKeyFingerprint ?: "")
+            }
+            if (includeKey) {
+                readKey()?.let {
+                    put("privateKey", Base64.encodeToString(it, Base64.NO_WRAP))
+                    put("keyFileName", s.keyFileName ?: "private key")
+                }
+                put("passphrase", s.passphrase)
+            }
+        }
+        context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(json.toString(2).toByteArray()) }
+            ?: throw IOException("Couldn't write the backup file.")
+    }
+
+    /** Restores settings from a backup. Returns true if it also contained the SSH key. */
+    suspend fun importBackup(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        val text = context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+            ?: throw IOException("Couldn't read that file.")
+        val j = try {
+            JSONObject(text)
+        } catch (e: JSONException) {
+            throw IOException("That file isn't a Media Search backup.")
+        }
+        if (j.optString("format") != BACKUP_FORMAT) throw IOException("That file isn't a Media Search backup.")
+
+        val current = settings.first()
+        save(
+            current.copy(
+                host = j.optString("host", current.host),
+                port = j.optInt("port", current.port),
+                extHost = j.optString("extHost", current.extHost),
+                extPort = j.optInt("extPort", current.extPort),
+                connectionMode = runCatching { ConnectionMode.valueOf(j.optString("connectionMode")) }
+                    .getOrDefault(current.connectionMode),
+                username = j.optString("username", current.username),
+                moviesPath = j.optString("moviesPath", current.moviesPath),
+                tvPath = j.optString("tvPath", current.tvPath),
+                passphrase = if (j.has("passphrase")) j.getString("passphrase") else current.passphrase,
+            ),
+        )
+
+        val hostKey = j.optString("hostKey")
+        if (hostKey.isNotEmpty()) pinHostKey(hostKey, j.optString("hostKeyFingerprint"))
+
+        val privateKey = j.optString("privateKey")
+        if (privateKey.isNotEmpty()) {
+            keyFile.writeBytes(Base64.decode(privateKey, Base64.NO_WRAP))
+            context.dataStore.edit { it[Keys.KEY_NAME] = j.optString("keyFileName", "private key") }
+            true
+        } else {
+            false
+        }
+    }
 
     private fun displayName(uri: Uri): String? =
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)

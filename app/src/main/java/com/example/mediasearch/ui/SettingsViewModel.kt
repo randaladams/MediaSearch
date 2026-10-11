@@ -92,6 +92,40 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    var includeKeyInBackup by mutableStateOf(false)
+
+    /** Saves what's on screen first, so the backup matches what you see. */
+    fun exportBackup(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                settingsRepo.save(current())
+                settingsRepo.exportBackup(uri, includeKeyInBackup)
+                _messages.send(if (includeKeyInBackup) "Backup saved (includes your SSH key — keep it private)" else "Backup saved")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _messages.send(e.message ?: "Couldn't save backup")
+            }
+        }
+    }
+
+    fun importBackup(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val hadKey = settingsRepo.importBackup(uri)
+                load() // show the restored values
+                _messages.send(
+                    if (hadKey) "Settings and SSH key restored. Tap sync on the main screen."
+                    else "Settings restored. Import your SSH key if it isn't already set.",
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _messages.send(e.message ?: "Couldn't restore backup")
+            }
+        }
+    }
+
     fun forgetHostKey() {
         viewModelScope.launch {
             settingsRepo.forgetHostKey()

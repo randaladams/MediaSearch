@@ -2,6 +2,7 @@ package com.example.mediasearch.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,7 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,7 +27,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,6 +43,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.Switch
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -72,6 +74,13 @@ fun SettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val keyPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importKey(uri)
+    }
+
+    val backupSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) vm.exportBackup(uri)
+    }
+    val backupPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importBackup(uri)
     }
 
     LaunchedEffect(Unit) { vm.load() }
@@ -230,20 +239,47 @@ fun SettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = vm::testConnection, enabled = !vm.busy, modifier = Modifier.weight(1f)) {
-                    if (vm.busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Text("Test connection")
-                }
+            // Stacked full-width so labels never wrap, even with large system fonts.
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(
                     onClick = vm::save,
                     enabled = !vm.busy,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.secondary,
                         contentColor = MaterialTheme.colorScheme.onSecondary,
                     ),
-                ) { Text("Save", fontWeight = FontWeight.Bold) }
+                ) { Text("Save", fontWeight = FontWeight.Bold, maxLines = 1) }
+                OutlinedButton(
+                    onClick = vm::testConnection,
+                    enabled = !vm.busy,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                ) {
+                    if (vm.busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("Test connection", maxLines = 1)
+                }
+            }
+            SettingsCard("💾", "Backup & restore", "Keep your settings safe across reinstalls", Color(0xFF0369A1)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Include SSH key & passphrase", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Handy, but then the file can log in to your Pi. Keep it private.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Switch(checked = vm.includeKeyInBackup, onCheckedChange = { vm.includeKeyInBackup = it })
+                }
+                OutlinedButton(
+                    onClick = { backupSaver.launch("mediasearch-backup.json") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) { Text("Save backup…", maxLines = 1) }
+                OutlinedButton(
+                    onClick = { backupPicker.launch(arrayOf("*/*")) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) { Text("Restore from backup…", maxLines = 1) }
             }
             Text(
                 "Media Search v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
@@ -274,13 +310,13 @@ private fun SettingsCard(
     accent: Color,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    ElevatedCard(
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         shape = RoundedCornerShape(20.dp),
+        // A thin outline in the card's accent color.
+        border = BorderStroke(1.5.dp, accent.copy(alpha = 0.55f)),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        // Colored accent strip along the top of each card.
-        Box(Modifier.fillMaxWidth().height(5.dp).background(accent))
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
