@@ -15,21 +15,6 @@ object Brand {
     )
     val Popcorn = Color(0xFFFCD34D)
     val OnHeader = Color.White
-
-    private val avatarColors = listOf(
-        Color(0xFF4F46E5), // indigo
-        Color(0xFF7C3AED), // violet
-        Color(0xFFDB2777), // pink
-        Color(0xFFDC2626), // red
-        Color(0xFFC2410C), // orange
-        Color(0xFFB45309), // amber
-        Color(0xFF15803D), // green
-        Color(0xFF0F766E), // teal
-        Color(0xFF0369A1), // sky
-    )
-
-    /** Same title always gets the same color. */
-    fun avatarColor(seed: String): Color = avatarColors[(seed.hashCode() and Int.MAX_VALUE) % avatarColors.size]
 }
 
 private val LightColors = lightColorScheme(

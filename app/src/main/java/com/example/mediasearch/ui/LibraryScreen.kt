@@ -39,6 +39,11 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
@@ -142,14 +147,16 @@ fun LibraryScreen(onOpenSettings: () -> Unit, vm: LibraryViewModel = viewModel()
                         divider = {},
                         modifier = Modifier.padding(top = 4.dp),
                     ) {
-                        LibraryTab("🎬  Movies", movieCount, selected = tab == 0) { tab = 0 }
-                        LibraryTab("📺  TV Shows", showCount, selected = tab == 1) { tab = 1 }
+                        LibraryTab("🎬 Movies", movieCount, selected = tab == 0) { tab = 0 }
+                        LibraryTab("📺 TV", showCount, selected = tab == 1) { tab = 1 }
                     }
                 },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
+        // Include the on-screen keyboard so content scrolls above it instead of being covered.
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             SyncStatus(settings)
@@ -171,8 +178,15 @@ private fun LibraryTab(label: String, count: Int?, selected: Boolean, onClick: (
         selectedContentColor = Brand.OnHeader,
         unselectedContentColor = Brand.OnHeader.copy(alpha = 0.65f),
         text = {
+            // Everything stays on one line so large system font sizes don't wrap the count.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+                Text(
+                    label,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
                 Spacer(Modifier.width(6.dp))
                 Box(
                     Modifier
@@ -182,9 +196,11 @@ private fun LibraryTab(label: String, count: Int?, selected: Boolean, onClick: (
                 ) {
                     Text(
                         (count ?: 0).toString(),
-                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = if (selected) Color(0xFF451A03) else Brand.OnHeader,
+                        maxLines = 1,
+                        softWrap = false,
                     )
                 }
             }
@@ -229,7 +245,6 @@ private fun MovieList(movies: List<Movie>, query: String) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(movies, key = { it.id }) { movie ->
             ListItem(
-                leadingContent = { LetterAvatar(movie.title) },
                 headlineContent = { Text(movie.title, fontWeight = FontWeight.Medium) },
                 trailingContent = if (movie.year != null) {
                     {
@@ -244,7 +259,7 @@ private fun MovieList(movies: List<Movie>, query: String) {
                 },
                 colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.background),
             )
-            HorizontalDivider(Modifier.padding(start = 74.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
         }
     }
 }
@@ -283,7 +298,6 @@ private fun ShowRow(item: ShowWithSeasons) {
     ) {
         ListItem(
             modifier = Modifier.clickable(enabled = seasons.isNotEmpty()) { expanded = !expanded },
-            leadingContent = { LetterAvatar(item.show.title, shape = CircleShape) },
             headlineContent = { Text(item.show.title, fontWeight = FontWeight.Medium) },
             supportingContent = {
                 Text(
@@ -306,7 +320,7 @@ private fun ShowRow(item: ShowWithSeasons) {
         )
         AnimatedVisibility(visible = expanded) {
             FlowRow(
-                Modifier.fillMaxWidth().padding(start = 74.dp, end = 16.dp, bottom = 14.dp),
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -315,7 +329,7 @@ private fun ShowRow(item: ShowWithSeasons) {
                 }
             }
         }
-        HorizontalDivider(Modifier.padding(start = 74.dp), color = MaterialTheme.colorScheme.outlineVariant)
+        HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 

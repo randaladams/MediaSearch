@@ -34,6 +34,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -84,6 +88,8 @@ fun SettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
         },
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
+        // Include the on-screen keyboard so content scrolls above it instead of being covered.
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
     ) { padding ->
         if (!vm.loaded) return@Scaffold
         val form = vm.form
